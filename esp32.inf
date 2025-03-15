@@ -1,0 +1,100 @@
+#include "WiFi.h"
+#include "WebServer.h"
+#include "EmonLib.h"
+#include <ArduinoJson.h>
+
+const char* ssid = "Galaxy M34 5G 3C4C";
+const char* password = "12345678";
+
+WebServer server(80);
+EnergyMonitor emon;
+#define vCalibration 118.0  
+#define currCalibration 0.48  // 🔧 Fine-tuned for better accuracy
+
+unsigned long lastMeasurementTime = 0;
+const unsigned long measurementInterval = 1000;  // Every 1 second
+
+float voltage = 0, current = 0;
+float voltageBuffer[10] = {0};  
+float currentBuffer[10] = {0};  
+int bufferIndex = 0;
+
+// 📌 Function to Measure Voltage & Current
+void measurePower() {
+  emon.calcVI(30, 3000);  // 🔧 Increased samples (30 cycles, 3s) for better accuracy
+  float rawVoltage = emon.Vrms;
+  float rawCurrent = emon.Irms;
+
+  // 📌 Ignore Noise: Ignore small fluctuations when no load is connected
+  if (rawVoltage < 20.0) rawVoltage = 0.0;
+  if (rawCurrent < 0.02) rawCurrent = 0.0;  
+
+  // 📌 Weighted Moving Average Filter for Current
+  voltageBuffer[bufferIndex] = rawVoltage;
+  currentBuffer[bufferIndex] = rawCurrent;
+  bufferIndex = (bufferIndex + 1) % 10;
+
+  float voltageSum = 0, currentSum = 0, weight = 1.0, totalWeight = 0.0;
+  for (int i = 0; i < 10; i++) {
+    voltageSum += voltageBuffer[i];
+    currentSum += currentBuffer[i] * weight;
+    totalWeight += weight;
+    weight *= 0.9;  // Reduce weight for older readings (smoother response)
+  }
+
+  voltage = voltageSum / 10;
+  current = currentSum / totalWeight;  
+
+  Serial.print("Voltage: ");
+  Serial.print(voltage);
+  Serial.print("V | Current: ");
+  Serial.print(current);
+  Serial.println("A");
+}
+
+// 📌 Handle HTTP Request (Send JSON Data)
+void handleDataRequest() {
+  StaticJsonDocument<200> json;
+  json["voltage"] = voltage;
+  json["current"] = current;
+
+  String response;
+  serializeJson(json, response);
+  server.send(200, "application/json", response);
+
+  Serial.println("Sent Data: " + response);
+}
+
+// 📌 Setup Function
+void setup() {
+  Serial.begin(115200);
+
+  // Connect to WiFi
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(200);
+    Serial.print(".");
+  }
+  Serial.println("\nConnected to WiFi");
+  Serial.print("ESP32 IP: ");
+  Serial.println(WiFi.localIP());
+
+  // Setup Sensors
+  emon.voltage(35, vCalibration, 1.7);
+  emon.current(34, currCalibration);
+
+  // Start Web Server
+  server.on("/data", HTTP_GET, handleDataRequest);
+  server.begin();
+}
+
+// 📌 Loop Function (Runs Every 1 Second)
+void loop() {
+  server.handleClient();
+
+  if (millis() - lastMeasurementTime >= measurementInterval) {
+    lastMeasurementTime = millis();
+    measurePower();
+  }
+}
