@@ -61,6 +61,29 @@ def get_energy_charge(units):
 
     return None  # No matching tariff
 
+@app.route('/power-usage', methods=['GET'])
+def get_power_usage():
+    try:
+        # Get 'days' parameter from the request (default to 7 days)
+        days = int(request.args.get('days', 7))  # Example: /power-usage?days=7
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        query = f"""
+        SELECT * FROM power_usage
+        WHERE timestamp >= NOW() - INTERVAL %s DAY
+        ORDER BY timestamp DESC;
+        """
+        cursor.execute(query, (days,))
+        results = cursor.fetchall()
+
+        conn.close()
+        return jsonify({"data": results, "status": "success"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e), "status": "failed"}), 500
+
 # API to receive ESP32 data, process & store it
 @app.route('/esp32/data', methods=['POST'])
 def receive_data():
