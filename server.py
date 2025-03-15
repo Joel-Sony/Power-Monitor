@@ -1,10 +1,20 @@
 from flask import Flask, request, jsonify
+from flask_mysqldb import MySQL
+from flask_cors import CORS
 import mysql.connector
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
+CORS(app)  # Allow requests from Flutter
 
-# Database Configuration
+# MySQL Configuration
+app.config['MYSQL_HOST'] = 'localhost'  # Change if accessing from another PC
+app.config['MYSQL_USER'] = 'your_mysql_user'
+app.config['MYSQL_PASSWORD'] = 'your_mysql_password'
+app.config['MYSQL_DB'] = 'your_database'
+
+mysql = MySQL(app)
+
 db_config = {
     "host": "localhost",
     "user": "joel",
@@ -12,86 +22,49 @@ db_config = {
     "database": "powerapp"
 }
 
-# Connect to MySQL
 def get_db_connection():
     return mysql.connector.connect(**db_config)
 
-# Get latest peak voltage for a given time range
-def get_peak_voltage(duration):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    query = f"SELECT MAX(voltage) FROM power_usage WHERE timestamp >= NOW() - INTERVAL {duration}"
-    cursor.execute(query)
-    result = cursor.fetchone()[0]
-    conn.close()
-    return result if result else 0
-
-# Get total units consumed in a given time range
-def get_total_units(duration):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    query = f"SELECT SUM(units_consumed) FROM power_usage WHERE timestamp >= NOW() - INTERVAL {duration}"
-    cursor.execute(query)
-    result = cursor.fetchone()[0]
-    conn.close()
-    return result if result else 0
-
-# Get highest power consumption time
-def get_highest_power_time():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    query = "SELECT timestamp FROM power_usage ORDER BY power DESC LIMIT 1"
-    cursor.execute(query)
-    result = cursor.fetchone()[0]
-    conn.close()
-    return result
-
-# Get latest KSEB rate
-def get_energy_charge(units):
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM kseb_tariff ORDER BY id DESC")  # Adjust based on correct sorting column
-    tariffs = cursor.fetchall()
-    conn.close()
-
-    for tariff in tariffs:
-        # Use min_units and max_units instead of units_range
-        if tariff['min_units'] <= units <= tariff['max_units']:
-            return tariff['energy_charge_single']  # Or 'energy_charge_three' based on connection type
-
-    return None  # No matching tariff
+@app.route('/data', methods=['GET'])
+def get_data():
+    try:
+        cursor = mysql.connection.cursor()
+        cursor.execute("SELECT * FROM your_table")  # Change to your table name
+        rows = cursor.fetchall()
+        
+        data = [{"id": row[0], "voltage": row[1], "current": row[2]} for row in rows]
+        cursor.close()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 @app.route('/power-usage', methods=['GET'])
 def get_power_usage():
     try:
-        # Get 'days' parameter from the request (default to 7 days)
-        days = int(request.args.get('days', 7))  # Example: /power-usage?days=7
-        
+        days = int(request.args.get('days', 7))
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-
-        query = f"""
+        
+        query = """
         SELECT * FROM power_usage
         WHERE timestamp >= NOW() - INTERVAL %s DAY
         ORDER BY timestamp DESC;
         """
         cursor.execute(query, (days,))
         results = cursor.fetchall()
-
+        
         conn.close()
         return jsonify({"data": results, "status": "success"}), 200
-
     except Exception as e:
         return jsonify({"error": str(e), "status": "failed"}), 500
 
-# API to receive ESP32 data, process & store it
 @app.route('/esp32/data', methods=['POST'])
 def receive_data():
     try:
         data = request.json
         voltage = float(data.get("voltage"))
         current = float(data.get("current"))
-        
+
         # Calculate Power (W) and Units Consumed (kWh)
         power = round(voltage * current, 2)
         units_consumed = round(power / 1000, 2)
@@ -107,20 +80,14 @@ def receive_data():
         total_units_week = get_total_units("7 DAY")
         total_units_month = get_total_units("30 DAY")
         total_units_year = get_total_units("365 DAY")
-        total_units_till_now = get_total_units("100 YEAR")  # Entire history
 
         # Get highest power consumption time
         highest_power_time = get_highest_power_time()
 
         # Get latest KSEB rate
-        rate = get_energy_charge(total_units_till_now)
-        total_bill = round(total_units_till_now * rate, 2) if rate else 0
-        bill_day = round(total_units_day * rate, 2) if rate else 0
-        bill_week = round(total_units_week * rate, 2) if rate else 0
-        bill_month = round(total_units_month * rate, 2) if rate else 0
-        bill_year = round(total_units_year * rate, 2) if rate else 0
-    
-        # Insert data into MySQL
+        rate = get_energy_charge(total_units_year)
+        total_bill = round(total_units_year * rate, 2) if rate else 0
+
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -128,13 +95,13 @@ def receive_data():
         INSERT INTO power_usage (voltage, current, power, units_consumed, peak_voltage_day,
                                 peak_voltage_week, peak_voltage_month, peak_voltage_year,
                                 total_units_day, total_units_week, total_units_month, total_units_year,
-                                highest_power_time, total_bill, bill_day, bill_week, bill_month, bill_year)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                highest_power_time, total_bill)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(query, (voltage, current, power, units_consumed, peak_voltage_day,
                                peak_voltage_week, peak_voltage_month, peak_voltage_year,
                                total_units_day, total_units_week, total_units_month, total_units_year,
-                               highest_power_time, total_bill, bill_day, bill_week, bill_month, bill_year))
+                               highest_power_time, total_bill))
         conn.commit()
         conn.close()
 
