@@ -37,7 +37,7 @@ The **Smart Power Monitoring System** is a real-time energy tracking solution th
 - ESP32 with appropriate sensors
 - Python 3 installed on Windows
 - MySQL Server
-- Flutter installed for mobile app development
+- Flutter 
 
 ### Backend (Flask API & MySQL)
 
@@ -60,9 +60,9 @@ The **Smart Power Monitoring System** is a real-time energy tracking solution th
 
 ## Future Improvements
 
-- 📌 Cloud-based storage option
-- 📌 AI-based energy consumption predictions
-- 📌 Smart alerts for unusual power consumption
+- Cloud-based storage option
+- AI-based energy consumption predictions
+- Monitoring power usage of each appliances
 
 ## License
 
