@@ -70,9 +70,12 @@ This project is licensed under the MIT License.
 
 ## Contributors
 
-1.[Joshua Jame Biju](https://github.com/hmm-1947)  
-2.[David George Anuj](https://github.com/DavidGeorgeAnuj)  
-3.[Kevin Jose](https://github.com/Kevinjose102)  
-4.[Joel Sony](https://github.com/Joel-Sony)  
+[Joshua Jame Biju](https://github.com/hmm-1947)  
+
+[David George Anuj](https://github.com/DavidGeorgeAnuj)  
+
+[Kevin Jose](https://github.com/Kevinjose102)  
+
+[Joel Sony](https://github.com/Joel-Sony)  
 
 
